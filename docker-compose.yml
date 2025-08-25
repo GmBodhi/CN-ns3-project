@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  ns3:
+    build: .
+    container_name: ns3-ddos-simulation
+    platform: linux/arm64
+    environment:
+      - DISPLAY=host.docker.internal:0
+    volumes:
+      # Mount current directory to share files
+      - ./simulation:/home/ns3/ns-allinone-3.39/ns-3.39/scratch/simulation
+      # Mount results directory
+      - ./results:/home/ns3/results
+    working_dir: /home/ns3/ns-allinone-3.39/ns-3.39
+    stdin_open: true
+    tty: true
+    network_mode: host
