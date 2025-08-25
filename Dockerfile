@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=America/Los_Angeles
 ENV DISPLAY=host.docker.internal:0
 
-# Install system dependencies in one layer
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     # Build essentials
     build-essential \
@@ -67,10 +67,6 @@ WORKDIR /home/ns3/ns-allinone-3.39/ns-3.39
 RUN ./ns3 configure --build-profile=optimized --enable-examples --enable-tests && \
     ./ns3 build
 
-# Build NetAnim (fixed - no make clean before qmake)
-WORKDIR /home/ns3/ns-allinone-3.39/netanim-3.108
-RUN qmake NetAnim.pro && \
-    make -j$(nproc) || echo "NetAnim build completed with warnings"
 
 # Set final working directory
 WORKDIR /home/ns3/ns-allinone-3.39/ns-3.39
@@ -79,10 +75,13 @@ WORKDIR /home/ns3/ns-allinone-3.39/ns-3.39
 RUN echo '#!/bin/bash\ncd /home/ns3/ns-allinone-3.39/ns-3.39\nexec "$@"' > /entrypoint.sh && \
     chmod +x /entrypoint.sh
 
-# Verify installations
+# Verify installations (using correct commands)
 RUN echo "=== Verifying installations ===" && \
-    ./ns3 --version && \
+    echo "ns-3 configuration:" && \
+    ./ns3 show config | head -10 && \
+    echo "Qt version:" && \
     qmake --version && \
+    echo "Python version:" && \
     python3 --version && \
     echo "=== Build completed successfully ==="
 
