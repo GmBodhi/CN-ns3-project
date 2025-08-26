@@ -50,8 +50,8 @@ int main (int argc, char *argv[])
   for (uint32_t i = 0; i < nLegitimate; ++i)
     devices.Add (p2p.Install (legitimateClients.Get (i), router.Get (0)));
   
-  // Server connection (bottleneck)
-  p2p.SetDeviceAttribute ("DataRate", StringValue ("2Mbps"));
+  // Server connection (sufficient bandwidth for legitimate traffic)
+  p2p.SetDeviceAttribute ("DataRate", StringValue ("5Mbps"));
   devices.Add (p2p.Install (router.Get (0), server.Get (0)));
 
   // Install Internet stack
@@ -77,8 +77,8 @@ int main (int argc, char *argv[])
 
   // Legitimate clients (low rate)
   UdpEchoClientHelper legit (serverIP, port);
-  legit.SetAttribute ("MaxPackets", UintegerValue (100));
-  legit.SetAttribute ("Interval", TimeValue (Seconds (0.1))); // 10 pps
+  legit.SetAttribute ("MaxPackets", UintegerValue (50));
+  legit.SetAttribute ("Interval", TimeValue (Seconds (0.2))); // 5 pps
   legit.SetAttribute ("PacketSize", UintegerValue (512));
   
   ApplicationContainer legitApps = legit.Install (legitimateClients);
