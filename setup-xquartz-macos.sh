@@ -47,15 +47,35 @@ echo "🔧 Configuring XQuartz..."
 # Enable network connections (required for Docker)
 defaults write org.xquartz.X11 nolisten_tcp -bool false
 
+# Set DISPLAY if not already set (XQuartz default)
+if [ -z "$DISPLAY" ]; then
+    export DISPLAY=:0
+    echo "🖥️  Set DISPLAY to :0"
+fi
+
+# Wait a moment for XQuartz to be fully ready
+sleep 2
+
 # Allow connections from localhost and Docker
-xhost + localhost
-xhost + 127.0.0.1
-xhost + host.docker.internal
+echo "🔐 Configuring X11 access permissions..."
+xhost + localhost 2>/dev/null || echo "   ⚠️  localhost access already configured"
+xhost + 127.0.0.1 2>/dev/null || echo "   ⚠️  127.0.0.1 access already configured" 
+xhost + host.docker.internal:0 2>/dev/null || echo "   ⚠️  host.docker.internal access already configured"
 
 # Create X11 authentication file for Docker
 XAUTH_FILE="$HOME/.Xauth"
+echo "🔑 Creating X11 authentication file..."
 touch "$XAUTH_FILE"
-xauth nlist "$DISPLAY" | sed -e 's/^..../ffff/' | xauth -f "$XAUTH_FILE" nmerge -
+
+# Generate auth entry for Docker
+if xauth nlist "$DISPLAY" >/dev/null 2>&1; then
+    xauth nlist "$DISPLAY" | sed -e 's/^..../ffff/' | xauth -f "$XAUTH_FILE" nmerge - 2>/dev/null || true
+    echo "   ✅ Authentication data added"
+else
+    echo "   ⚠️  No existing auth data found, creating basic entry"
+    # Create a basic auth entry if none exists
+    xauth -f "$XAUTH_FILE" add "$DISPLAY" . "$(mcookie)" 2>/dev/null || true
+fi
 
 echo "✅ XQuartz configured for Docker"
 echo "📁 X11 authentication file created: $XAUTH_FILE"
