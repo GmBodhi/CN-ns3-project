@@ -10,14 +10,16 @@ This is a DDoS (Distributed Denial of Service) attack and defense simulation pro
 
 ### Docker Development Environment
 
-**Build and start the ns-3 environment:**
+**For macOS with NetAnim GUI support:**
 ```bash
-docker-compose up --build
-```
+# First-time setup (run on macOS host)
+./setup-xquartz-macos.sh
 
-**Run interactive shell in container:**
-```bash
-docker-compose run --rm ns3
+# Build and start the ns-3 environment
+docker-compose up --build
+
+# Run interactive shell in container
+docker-compose exec ns3 bash
 ```
 
 ### Native ns-3 Commands (inside container or native install)
@@ -44,7 +46,10 @@ docker-compose run --rm ns3
 
 **View NetAnim visualization:**
 ```bash
-# After running simulation, open the generated animation file
+# Use the helper script (automatically finds animation files)
+./launch-netanim.sh
+
+# Or manually (after running simulation)
 cd netanim
 ./NetAnim ../ddos-simulation.xml
 ```
@@ -120,9 +125,33 @@ When running simulations, these files are created:
 4. **View animation**: Open `ddos-simulation.xml` with NetAnim
 5. **Analyze results** using console output and animation
 
+## macOS NetAnim Setup
+
+### Prerequisites
+1. **Install Homebrew** (if not already installed):
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+
+2. **Install XQuartz**:
+   ```bash
+   brew install --cask xquartz
+   ```
+
+3. **Run the setup script** (first time only):
+   ```bash
+   chmod +x setup-xquartz-macos.sh
+   ./setup-xquartz-macos.sh
+   ```
+
+### Troubleshooting
+- If NetAnim doesn't open: Restart XQuartz and run setup script again
+- If "cannot connect to display" error: Check that XQuartz allows network connections
+- For performance issues: Close other GUI applications while running NetAnim
+
 ## Important Notes
 
 - This simulation is designed for **educational and defensive security research only**
-- Simplified codebase with NetAnim visualization support
-- All traffic uses standard ns-3 UDP echo applications
+- Qt + XQuartz integration provides native GUI support on macOS
+- All traffic uses standard ns-3 UDP echo applications  
 - Visual network topology with color-coded node types

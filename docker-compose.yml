@@ -7,13 +7,17 @@ services:
     platform: linux/arm64
     environment:
       - DISPLAY=host.docker.internal:0
+      - QT_X11_NO_MITSHM=1
+      - QT_GRAPHICSSYSTEM=native
     volumes:
       # Mount current directory to share files
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./simulation:/home/ns3/ns-allinone-3.39/ns-3.39/scratch/simulation
-      # Mount results directory
+      # Mount results directory  
       - ./results:/home/ns3/results
+      # X11 authentication (will be created by setup script)
+      - ~/.Xauth:/root/.Xauth:rw
     working_dir: /home/ns3/ns-allinone-3.39/ns-3.39
     stdin_open: true
     tty: true
+    # Use host networking for X11 forwarding
     network_mode: host

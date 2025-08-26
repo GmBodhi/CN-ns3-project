@@ -4,6 +4,9 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=America/Los_Angeles
 ENV DISPLAY=host.docker.internal:0
+ENV QT_X11_NO_MITSHM=1
+ENV QT_GRAPHICSSYSTEM=native
+ENV XAUTHORITY=/root/.Xauth
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -71,8 +74,24 @@ RUN ./ns3 configure --build-profile=optimized --enable-examples --enable-tests &
 # Set final working directory
 WORKDIR /home/ns3/ns-allinone-3.39/ns-3.39
 
-# Create entrypoint script
-RUN echo '#!/bin/bash\ncd /home/ns3/ns-allinone-3.39/ns-3.39\nexec "$@"' > /entrypoint.sh && \
+# Create entrypoint script with X11 setup
+RUN echo '#!/bin/bash\n\
+cd /home/ns3/ns-allinone-3.39/ns-3.39\n\
+# Set up X11 authentication if available\n\
+if [ -f "$XAUTHORITY" ]; then\n\
+    echo "Using X11 authentication from $XAUTHORITY"\n\
+else\n\
+    echo "Warning: X11 authentication file not found. GUI applications may not work."\n\
+fi\n\
+# Test X11 connection\n\
+if command -v xset >/dev/null 2>&1; then\n\
+    if xset q >/dev/null 2>&1; then\n\
+        echo "X11 connection successful"\n\
+    else\n\
+        echo "Warning: Cannot connect to X11 display $DISPLAY"\n\
+    fi\n\
+fi\n\
+exec "$@"' > /entrypoint.sh && \
     chmod +x /entrypoint.sh
 
 # Verify installations (using correct commands)
