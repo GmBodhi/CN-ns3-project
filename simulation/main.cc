@@ -102,19 +102,19 @@ int main (int argc, char *argv[])
   
   // Color nodes for visualization
   for (uint32_t i = 0; i < nAttackers; ++i)
-    anim.SetNodeColor (attackers.Get (i), 255, 0, 0); // Red for attackers
+    anim.UpdateNodeColor (attackers.Get (i), 255, 0, 0); // Red for attackers
   for (uint32_t i = 0; i < nLegitimate; ++i)
-    anim.SetNodeColor (legitimateClients.Get (i), 0, 255, 0); // Green for legitimate
-  anim.SetNodeColor (router.Get (0), 0, 0, 255); // Blue for router
-  anim.SetNodeColor (server.Get (0), 255, 165, 0); // Orange for server
+    anim.UpdateNodeColor (legitimateClients.Get (i), 0, 255, 0); // Green for legitimate
+  anim.UpdateNodeColor (router.Get (0), 0, 0, 255); // Blue for router
+  anim.UpdateNodeColor (server.Get (0), 255, 165, 0); // Orange for server
 
   // Position nodes for better visualization
-  anim.SetNodePosition (server.Get (0), 50, 25);
-  anim.SetNodePosition (router.Get (0), 25, 25);
+  anim.SetConstantPosition (server.Get (0), 50, 25);
+  anim.SetConstantPosition (router.Get (0), 25, 25);
   for (uint32_t i = 0; i < nAttackers; ++i)
-    anim.SetNodePosition (attackers.Get (i), 5, 10 + i * 5);
+    anim.SetConstantPosition (attackers.Get (i), 5, 10 + i * 5);
   for (uint32_t i = 0; i < nLegitimate; ++i)
-    anim.SetNodePosition (legitimateClients.Get (i), 5, 35 + i * 5);
+    anim.SetConstantPosition (legitimateClients.Get (i), 5, 35 + i * 5);
 
   // Flow monitoring
   FlowMonitorHelper flowmon;
