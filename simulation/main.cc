@@ -17,7 +17,7 @@ int main(int argc, char *argv[])
   uint32_t nLegitimate = 3;
   double simulationTime = 20.0;
   bool enableAttack = true;
-
+  
   // Command line arguments
   CommandLine cmd;
   cmd.AddValue("nAttackers", "Number of attacking nodes", nAttackers);
@@ -37,20 +37,20 @@ int main(int argc, char *argv[])
   server.Create(1);
   router.Create(1);
 
-  // Create topology: All nodes connect to router, router connects to server
+  // Create topology
   PointToPointHelper p2p;
   p2p.SetDeviceAttribute("DataRate", StringValue("10Mbps"));
   p2p.SetChannelAttribute("Delay", StringValue("2ms"));
 
   NetDeviceContainer devices;
-
-  // Connect all nodes to router
+  
+  // Connect nodes to router
   for (uint32_t i = 0; i < nAttackers; ++i)
     devices.Add(p2p.Install(attackers.Get(i), router.Get(0)));
   for (uint32_t i = 0; i < nLegitimate; ++i)
     devices.Add(p2p.Install(legitimateClients.Get(i), router.Get(0)));
 
-  // Server connection (sufficient bandwidth for legitimate traffic)
+  // Server connection (bottleneck)
   p2p.SetDeviceAttribute("DataRate", StringValue("5Mbps"));
   devices.Add(p2p.Install(router.Get(0), server.Get(0)));
 
@@ -106,10 +106,10 @@ int main(int argc, char *argv[])
     anim.UpdateNodeColor(attackers.Get(i), 255, 0, 0); // Red for attackers
   for (uint32_t i = 0; i < nLegitimate; ++i)
     anim.UpdateNodeColor(legitimateClients.Get(i), 0, 255, 0); // Green for legitimate
-  anim.UpdateNodeColor(router.Get(0), 0, 0, 255);              // Blue for router
-  anim.UpdateNodeColor(server.Get(0), 255, 165, 0);            // Orange for server
+  anim.UpdateNodeColor(router.Get(0), 0, 0, 255); // Blue for router
+  anim.UpdateNodeColor(server.Get(0), 255, 165, 0); // Orange for server
 
-  // Position nodes for better visualization
+  // Position nodes
   anim.SetConstantPosition(server.Get(0), 50, 25);
   anim.SetConstantPosition(router.Get(0), 25, 25);
   for (uint32_t i = 0; i < nAttackers; ++i)
