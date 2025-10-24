@@ -5,8 +5,8 @@
 #include "ns3/applications-module.h"
 #include "ns3/flow-monitor-module.h"
 #include "ns3/netanim-module.h"
-#include "ns3/ipv4-l3-protocol.h"
 #include "rate-limiter.h"
+#include "rate-limited-udp-server.h"
 
 using namespace ns3;
 
@@ -25,111 +25,23 @@ static uint32_t g_forwardedCounterId = 0;
 static uint32_t g_blockedCounterId = 0;
 
 /**
- * Packet receive callback for rate limiting
- * Attached to server device - we manually pass allowed packets to IPv4 layer
+ * Callback to update NetAnim when defense state changes
  */
-bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
-                uint16_t protocol, const Address& from)
+void UpdateDefenseVisualization()
 {
-  // Only filter IPv4 packets (0x0800)
-  if (protocol != 0x0800)
+  if (g_anim != nullptr && g_rateLimiter != nullptr && g_rateLimiter->IsDefenseActive())
   {
-    // Pass non-IP packets (ARP, etc.) to IPv4 layer
-    Ptr<Ipv4L3Protocol> ipv4 = g_serverNode->GetObject<Ipv4L3Protocol>();
-    ipv4->Receive(device, packet, protocol, from, Address(), NetDevice::PACKET_HOST);
-    return true;
-  }
-
-  // If no defense, pass all packets through
-  if (g_rateLimiter == nullptr)
-  {
-    Ptr<Ipv4L3Protocol> ipv4 = g_serverNode->GetObject<Ipv4L3Protocol>();
-    ipv4->Receive(device, packet, protocol, from, Address(), NetDevice::PACKET_HOST);
-    return true;
-  }
-
-  // Extract source IP from packet
-  Ptr<Packet> copy = packet->Copy();
-  Ipv4Header ipHeader;
-  copy->RemoveHeader(ipHeader);
-  Ipv4Address sourceIp = ipHeader.GetSource();
-
-  // Debug: Log packets
-  static uint32_t packetCount = 0;
-  static uint32_t droppedCount = 0;
-  static uint32_t allowedCount = 0;
-  packetCount++;
-
-  // Check with rate limiter
-  bool allowed = g_rateLimiter->AllowPacket(sourceIp, Simulator::Now());
-
-  if (allowed)
-  {
-    allowedCount++;
-    // Manually deliver packet to IPv4 layer using Ipv4L3Protocol
-    Ptr<Ipv4L3Protocol> ipv4 = g_serverNode->GetObject<Ipv4L3Protocol>();
-    ipv4->Receive(device, packet, protocol, from, Address(), NetDevice::PACKET_HOST);
-  }
-  else
-  {
-    droppedCount++;
-    // Packet is dropped - don't deliver to IPv4 layer
-  }
-
-  // Log first packet and every 100th dropped packet
-  if (packetCount == 1)
-  {
-    std::cout << "[DEBUG] First packet: from " << sourceIp
-              << " at " << Simulator::Now().GetSeconds() << "s - "
-              << (allowed ? "ALLOWED" : "DROPPED") << std::endl;
-  }
-  if (!allowed && (droppedCount % 100 == 1))
-  {
-    std::cout << "[DEBUG] Dropped #" << droppedCount << " from " << sourceIp
-              << " at " << Simulator::Now().GetSeconds() << "s (allowed so far: "
-              << allowedCount << ")" << std::endl;
-  }
-
-  // Update NetAnim visualization
-  if (g_anim != nullptr && g_rateLimiter->IsDefenseActive())
-  {
-    static bool colorUpdated = false;
-    if (!colorUpdated)
+    static bool updated = false;
+    if (!updated)
     {
       // Change router color to yellow when defense is active
       g_anim->UpdateNodeColor(g_routerNode, 255, 255, 0);
       g_anim->UpdateNodeDescription(g_routerNode, "Router (DEFENDING)");
-      colorUpdated = true;
-    }
+      updated = true;
 
-    // Update counters for visualization
-    if (allowed)
-    {
-      g_routerForwardCounter++;
-      g_anim->UpdateNodeCounter(g_forwardedCounterId, g_routerNode->GetId(), g_routerForwardCounter);
-    }
-    else
-    {
-      g_routerDropCounter++;
-      g_anim->UpdateNodeCounter(g_blockedCounterId, g_routerNode->GetId(), g_routerDropCounter);
-
-      // Update attacker node descriptions with drop counts
-      auto dropCounts = g_rateLimiter->GetSourceDropCounts();
-      for (uint32_t i = 0; i < g_attackers.GetN(); ++i)
-      {
-        Ptr<Ipv4> ipv4 = g_attackers.Get(i)->GetObject<Ipv4>();
-        if (ipv4->GetAddress(1, 0).GetLocal() == sourceIp)
-        {
-          uint32_t drops = dropCounts[sourceIp];
-          g_anim->UpdateNodeDescription(g_attackers.Get(i),
-                                        "Attacker " + std::to_string(i) + " (Blocked: " + std::to_string(drops) + ")");
-          break;
-        }
-      }
+      std::cout << "[INFO] NetAnim updated - router now defending" << std::endl;
     }
   }
-
-  return allowed;
 }
 
 int main(int argc, char *argv[])
@@ -214,29 +126,23 @@ int main(int argc, char *argv[])
 
   Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
-  // Attach rate limiting callback to server device
-  // (Attaching to router devices breaks forwarding, so we filter at server instead)
-  if (enableDefense)
-  {
-    Ptr<NetDevice> serverDevice = serverLink.Get(1); // Server device (index 1)
-    serverDevice->SetReceiveCallback(MakeCallback(&RxCallback));
-    std::cout << "[INFO] Defense callback attached to server device" << std::endl;
-    std::cout << "[INFO] Detection threshold: 500 pps, Rate limit: 100 pps per source" << std::endl;
-  }
-
   // Setup applications
   uint16_t port = 9;
   Ipv4Address serverIP = server.Get(0)->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
 
-  // Server - use UdpServer for one-way traffic reception
-  UdpServerHelper udpServer(port);
-  ApplicationContainer serverApps = udpServer.Install(server);
-  serverApps.Start(Seconds(1.0));
-  serverApps.Stop(Seconds(simulationTime));
-
-  // Get pointer to server app for monitoring
-  Ptr<UdpServer> udpServerApp = DynamicCast<UdpServer>(serverApps.Get(0));
-  std::cout << "[INFO] UdpServer application installed" << std::endl;
+  // Server - use custom RateLimitedUdpServer for application-level filtering
+  // This way NetAnim sees all packets, but we filter at application layer
+  Ptr<RateLimitedUdpServer> serverApp = CreateObject<RateLimitedUdpServer>();
+  serverApp->SetPort(port);
+  if (enableDefense)
+  {
+    serverApp->SetRateLimiter(g_rateLimiter);
+    std::cout << "[INFO] Rate-limited server installed (filtering at application level)" << std::endl;
+    std::cout << "[INFO] Detection threshold: 500 pps, Rate limit: 100 pps per source" << std::endl;
+  }
+  server.Get(0)->AddApplication(serverApp);
+  serverApp->SetStartTime(Seconds(1.0));
+  serverApp->SetStopTime(Seconds(simulationTime));
 
   // Legitimate clients (moderate rate) - 50 pps, 256-byte packets
   // This is well under the 100 pps rate limit, so they should be allowed
@@ -306,15 +212,24 @@ int main(int argc, char *argv[])
 
   std::cout << "\n=== Starting Simulation ===" << std::endl;
 
+  // Schedule periodic updates for NetAnim visualization
+  if (enableDefense)
+  {
+    for (double t = 0; t < simulationTime; t += 0.5)
+    {
+      Simulator::Schedule(Seconds(t), &UpdateDefenseVisualization);
+    }
+  }
+
   // Run simulation
   Simulator::Stop(Seconds(simulationTime));
   Simulator::Run();
 
-  // Check how many packets the server actually received at application level
-  if (udpServerApp)
+  // Check how many packets the server actually received/dropped at application level
+  std::cout << "\n[INFO] Packets received at server application: " << serverApp->GetReceived() << std::endl;
+  if (enableDefense)
   {
-    uint32_t receivedAtApp = udpServerApp->GetReceived();
-    std::cout << "\n[INFO] Packets received at UdpServer application: " << receivedAtApp << std::endl;
+    std::cout << "[INFO] Packets dropped by application-level rate limiter: " << serverApp->GetDropped() << std::endl;
   }
 
   // Enhanced statistics - separate legitimate vs attack traffic
