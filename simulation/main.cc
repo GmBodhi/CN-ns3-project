@@ -216,6 +216,10 @@ int main(int argc, char *argv[])
   serverApps.Start(Seconds(1.0));
   serverApps.Stop(Seconds(simulationTime));
 
+  // Get pointer to server app for monitoring
+  Ptr<UdpServer> udpServerApp = DynamicCast<UdpServer>(serverApps.Get(0));
+  std::cout << "[INFO] UdpServer application installed" << std::endl;
+
   // Legitimate clients (low rate) - 5 pps, 256-byte packets
   UdpClientHelper legitClient(serverIP, port);
   legitClient.SetAttribute("MaxPackets", UintegerValue(1000));
@@ -286,6 +290,13 @@ int main(int argc, char *argv[])
   // Run simulation
   Simulator::Stop(Seconds(simulationTime));
   Simulator::Run();
+
+  // Check how many packets the server actually received at application level
+  if (udpServerApp)
+  {
+    uint32_t receivedAtApp = udpServerApp->GetReceived();
+    std::cout << "\n[INFO] Packets received at UdpServer application: " << receivedAtApp << std::endl;
+  }
 
   // Enhanced statistics - separate legitimate vs attack traffic
   monitor->CheckForLostPackets();
