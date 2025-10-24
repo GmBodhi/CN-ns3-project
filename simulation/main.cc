@@ -248,8 +248,7 @@ int main(int argc, char *argv[])
   uint32_t legitTx = 0, legitRx = 0;
   uint32_t attackTx = 0, attackRx = 0;
 
-  Ipv4FlowClassifier* classifier = DynamicCast<Ipv4FlowClassifier>(
-      DynamicCast<FlowMonitorHelper*>(&flowmon)->GetClassifier());
+  Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier>(flowmon.GetClassifier());
 
   for (auto &flow : stats)
   {
