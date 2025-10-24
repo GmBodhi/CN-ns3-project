@@ -24,6 +24,7 @@ static uint32_t g_blockedCounterId = 0;
 
 /**
  * Packet receive callback for rate limiting at router
+ * Attached to each client-facing interface on the router
  */
 bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
                 uint16_t protocol, const Address& from)
@@ -44,6 +45,15 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
   Ipv4Header ipHeader;
   copy->RemoveHeader(ipHeader);
   Ipv4Address sourceIp = ipHeader.GetSource();
+
+  // Debug: Log packets for troubleshooting
+  static uint32_t packetCount = 0;
+  packetCount++;
+  if (packetCount == 1)
+  {
+    std::cout << "[DEBUG] First packet in callback: from " << sourceIp
+              << " at " << Simulator::Now().GetSeconds() << "s" << std::endl;
+  }
 
   // Check with rate limiter
   bool allowed = g_rateLimiter->AllowPacket(sourceIp, Simulator::Now());
@@ -137,24 +147,39 @@ int main(int argc, char *argv[])
   p2p.SetChannelAttribute("Delay", StringValue("2ms"));
 
   NetDeviceContainer devices;
-  
-  // Connect nodes to router
+  NetDeviceContainer routerDevices; // Track router's client-facing devices
+
+  // Connect nodes to router and save router's devices
   for (uint32_t i = 0; i < nAttackers; ++i)
-    devices.Add(p2p.Install(attackers.Get(i), router.Get(0)));
+  {
+    NetDeviceContainer link = p2p.Install(attackers.Get(i), router.Get(0));
+    devices.Add(link);
+    routerDevices.Add(link.Get(1)); // Router's device is at index 1
+  }
   for (uint32_t i = 0; i < nLegitimate; ++i)
-    devices.Add(p2p.Install(legitimateClients.Get(i), router.Get(0)));
+  {
+    NetDeviceContainer link = p2p.Install(legitimateClients.Get(i), router.Get(0));
+    devices.Add(link);
+    routerDevices.Add(link.Get(1)); // Router's device is at index 1
+  }
 
   // Server connection (bottleneck)
   p2p.SetDeviceAttribute("DataRate", StringValue("5Mbps"));
   NetDeviceContainer serverLink = p2p.Install(router.Get(0), server.Get(0));
   devices.Add(serverLink);
 
-  // Attach rate limiting callback to router's device facing server (index 0 = router side)
-  // This way packets are visibly blocked AT the router in NetAnim
+  // Attach rate limiting callback to ALL router's client-facing devices
+  // This catches packets as they arrive from clients/attackers
   if (enableDefense)
   {
-    Ptr<NetDevice> routerDevice = serverLink.Get(0);
-    routerDevice->SetReceiveCallback(MakeCallback(&RxCallback));
+    for (uint32_t i = 0; i < routerDevices.GetN(); ++i)
+    {
+      Ptr<NetDevice> dev = routerDevices.Get(i);
+      dev->SetReceiveCallback(MakeCallback(&RxCallback));
+    }
+    std::cout << "[INFO] Defense callbacks attached to " << routerDevices.GetN()
+              << " router interfaces" << std::endl;
+    std::cout << "[INFO] Detection threshold: 500 pps, Rate limit: 100 pps per source" << std::endl;
   }
 
   // Install Internet stack

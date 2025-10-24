@@ -69,6 +69,7 @@ void RateLimiter::UpdateDefenseState(Time currentTime)
   if (m_windowStart == Seconds(0))
   {
     m_windowStart = currentTime;
+    std::cout << "[DEBUG] Rate limiter: First packet at t=" << currentTime.GetSeconds() << "s" << std::endl;
   }
 
   // Check if we need to start a new measurement window
@@ -77,6 +78,10 @@ void RateLimiter::UpdateDefenseState(Time currentTime)
   {
     // Calculate current packet rate
     uint32_t currentRate = static_cast<uint32_t>(m_windowPackets / elapsed);
+
+    // Debug output every window
+    std::cout << "[DEBUG] t=" << currentTime.GetSeconds() << "s: Rate = " << currentRate
+              << " pps (threshold: " << m_detectionThreshold << " pps)" << std::endl;
 
     // Trigger defense if rate exceeds threshold and not already active
     if (!m_defenseActive && currentRate > m_detectionThreshold)
