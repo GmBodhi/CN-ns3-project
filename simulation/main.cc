@@ -15,6 +15,7 @@ NS_LOG_COMPONENT_DEFINE("SimpleDDoSSimulation");
 static RateLimiter* g_rateLimiter = nullptr;
 static AnimationInterface* g_anim = nullptr;
 static Ptr<Node> g_routerNode = nullptr;
+static Ptr<Node> g_serverNode = nullptr;
 static NodeContainer g_attackers;
 static NodeContainer g_legitimateClients;
 static uint32_t g_routerDropCounter = 0;
@@ -24,21 +25,26 @@ static uint32_t g_blockedCounterId = 0;
 
 /**
  * Packet receive callback for rate limiting
- * Attached to server device to avoid breaking router forwarding
- * But we visualize it as router-based defense in NetAnim
+ * Attached to server device - we manually pass allowed packets to IPv4 layer
  */
 bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
                 uint16_t protocol, const Address& from)
 {
-  if (g_rateLimiter == nullptr)
-  {
-    return true; // No defense, allow all packets
-  }
-
   // Only filter IPv4 packets (0x0800)
   if (protocol != 0x0800)
   {
-    return true; // Allow non-IP packets (ARP, etc.)
+    // Pass non-IP packets (ARP, etc.) to IPv4 layer
+    Ptr<Ipv4> ipv4 = g_serverNode->GetObject<Ipv4>();
+    ipv4->Receive(device, packet, protocol, from, device, NetDevice::PACKET_HOST, Address());
+    return true;
+  }
+
+  // If no defense, pass all packets through
+  if (g_rateLimiter == nullptr)
+  {
+    Ptr<Ipv4> ipv4 = g_serverNode->GetObject<Ipv4>();
+    ipv4->Receive(device, packet, protocol, from, device, NetDevice::PACKET_HOST, Address());
+    return true;
   }
 
   // Extract source IP from packet
@@ -50,12 +56,20 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
   // Debug: Log packets
   static uint32_t packetCount = 0;
   static uint32_t droppedCount = 0;
+  static uint32_t allowedCount = 0;
   packetCount++;
 
   // Check with rate limiter
   bool allowed = g_rateLimiter->AllowPacket(sourceIp, Simulator::Now());
 
-  if (!allowed)
+  if (allowed)
+  {
+    allowedCount++;
+    // Manually deliver packet to IPv4 layer
+    Ptr<Ipv4> ipv4 = g_serverNode->GetObject<Ipv4>();
+    ipv4->Receive(device, packet, protocol, from, device, NetDevice::PACKET_HOST, Address());
+  }
+  else
   {
     droppedCount++;
   }
@@ -70,7 +84,8 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
   if (!allowed && (droppedCount % 100 == 1))
   {
     std::cout << "[DEBUG] Dropped #" << droppedCount << " from " << sourceIp
-              << " at " << Simulator::Now().GetSeconds() << "s" << std::endl;
+              << " at " << Simulator::Now().GetSeconds() << "s (allowed so far: "
+              << allowedCount << ")" << std::endl;
   }
 
   // Update NetAnim visualization
@@ -149,6 +164,7 @@ int main(int argc, char *argv[])
   g_attackers = attackers;
   g_legitimateClients = legitimateClients;
   g_routerNode = router.Get(0);
+  g_serverNode = server.Get(0);
 
   // Initialize rate limiter if defense is enabled
   if (enableDefense)
@@ -220,10 +236,11 @@ int main(int argc, char *argv[])
   Ptr<UdpServer> udpServerApp = DynamicCast<UdpServer>(serverApps.Get(0));
   std::cout << "[INFO] UdpServer application installed" << std::endl;
 
-  // Legitimate clients (low rate) - 5 pps, 256-byte packets
+  // Legitimate clients (moderate rate) - 50 pps, 256-byte packets
+  // This is well under the 100 pps rate limit, so they should be allowed
   UdpClientHelper legitClient(serverIP, port);
-  legitClient.SetAttribute("MaxPackets", UintegerValue(1000));
-  legitClient.SetAttribute("Interval", TimeValue(Seconds(0.2))); // 5 packets per second
+  legitClient.SetAttribute("MaxPackets", UintegerValue(10000));
+  legitClient.SetAttribute("Interval", TimeValue(Seconds(0.02))); // 50 packets per second
   legitClient.SetAttribute("PacketSize", UintegerValue(256));
 
   ApplicationContainer legitApps = legitClient.Install(legitimateClients);
