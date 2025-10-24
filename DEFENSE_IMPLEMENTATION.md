@@ -134,12 +134,9 @@ cd /home/ns3/ns-allinone-3.39/netanim-3.108
 
 **What to observe:**
 - Router turns **yellow** when defense activates (~5s)
-- Router description updates in real-time: "Router (BLOCKING) Dropped:XXX Allowed:YYY"
-- **Packets from attackers arrive at router but DON'T continue to server** (blocked at router)
-- Attacker nodes show "Blocked:XXX" in descriptions
+- Attacker nodes show "Dropped: XXX" in descriptions
 - Packet flow rate visibly reduced during attack
-- Legitimate client traffic continues to flow through to server
-- Server receives much less traffic once defense is active
+- Legitimate client traffic continues to flow
 
 ## Implementation Details
 
@@ -165,7 +162,7 @@ if (windowRate > 500 pps && !defenseActive):
 ### Packet Flow
 
 ```
-Packet arrives at ROUTER → RxCallback()
+Packet arrives at server → RxCallback()
     ↓
 Extract source IP
     ↓
@@ -175,12 +172,8 @@ RateLimiter::AllowPacket(sourceIP)
     ↓
 Token bucket check
     ↓
-Allow → Forward to server | Drop → Blocked at router
-    ↓                        ↓
-Update NetAnim          NetAnim shows drop at router
+Allow/Drop → Update NetAnim
 ```
-
-**Important:** Packets are blocked AT THE ROUTER, not at the server. This makes the defense visible in NetAnim - you'll see packets arriving at the router and being dropped there before they can reach the server.
 
 ### Statistics Classification
 
