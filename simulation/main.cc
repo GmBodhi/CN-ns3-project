@@ -36,7 +36,7 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
   {
     // Pass non-IP packets (ARP, etc.) to IPv4 layer
     Ptr<Ipv4L3Protocol> ipv4 = g_serverNode->GetObject<Ipv4L3Protocol>();
-    ipv4->Receive(device, packet, protocol, from, device, NetDevice::PACKET_HOST, Address());
+    ipv4->Receive(device, packet, protocol, from, Address(), NetDevice::PACKET_HOST);
     return true;
   }
 
@@ -44,7 +44,7 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
   if (g_rateLimiter == nullptr)
   {
     Ptr<Ipv4L3Protocol> ipv4 = g_serverNode->GetObject<Ipv4L3Protocol>();
-    ipv4->Receive(device, packet, protocol, from, device, NetDevice::PACKET_HOST, Address());
+    ipv4->Receive(device, packet, protocol, from, Address(), NetDevice::PACKET_HOST);
     return true;
   }
 
@@ -68,7 +68,7 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
     allowedCount++;
     // Manually deliver packet to IPv4 layer using Ipv4L3Protocol
     Ptr<Ipv4L3Protocol> ipv4 = g_serverNode->GetObject<Ipv4L3Protocol>();
-    ipv4->Receive(device, packet, protocol, from, device, NetDevice::PACKET_HOST, Address());
+    ipv4->Receive(device, packet, protocol, from, Address(), NetDevice::PACKET_HOST);
   }
   else
   {
