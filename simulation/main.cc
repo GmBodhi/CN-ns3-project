@@ -210,34 +210,29 @@ int main(int argc, char *argv[])
   uint16_t port = 9;
   Ipv4Address serverIP = server.Get(0)->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
 
-  // Server - use PacketSink instead of UdpEchoServer to avoid response traffic
-  PacketSinkHelper sinkServer("ns3::UdpSocketFactory",
-                              InetSocketAddress(Ipv4Address::GetAny(), port));
-  ApplicationContainer serverApps = sinkServer.Install(server);
+  // Server - use UdpServer for one-way traffic reception
+  UdpServerHelper udpServer(port);
+  ApplicationContainer serverApps = udpServer.Install(server);
   serverApps.Start(Seconds(1.0));
   serverApps.Stop(Seconds(simulationTime));
 
-  // Legitimate clients (low rate) - use OnOffApplication for one-way traffic
-  OnOffHelper legitClient("ns3::UdpSocketFactory",
-                          InetSocketAddress(serverIP, port));
-  legitClient.SetAttribute("DataRate", StringValue("10Kbps")); // ~5 pps * 256 bytes
+  // Legitimate clients (low rate) - 5 pps, 256-byte packets
+  UdpClientHelper legitClient(serverIP, port);
+  legitClient.SetAttribute("MaxPackets", UintegerValue(1000));
+  legitClient.SetAttribute("Interval", TimeValue(Seconds(0.2))); // 5 packets per second
   legitClient.SetAttribute("PacketSize", UintegerValue(256));
-  legitClient.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1.0]"));
-  legitClient.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0.0]"));
 
   ApplicationContainer legitApps = legitClient.Install(legitimateClients);
   legitApps.Start(Seconds(2.0));
   legitApps.Stop(Seconds(simulationTime));
 
-  // Attack traffic (high rate) - use OnOffApplication for one-way flood
+  // Attack traffic (high rate) - 1000 pps, 1024-byte packets
   if (enableAttack)
   {
-    OnOffHelper attackClient("ns3::UdpSocketFactory",
-                             InetSocketAddress(serverIP, port));
-    attackClient.SetAttribute("DataRate", StringValue("8Mbps")); // ~1000 pps * 1024 bytes
+    UdpClientHelper attackClient(serverIP, port);
+    attackClient.SetAttribute("MaxPackets", UintegerValue(100000));
+    attackClient.SetAttribute("Interval", TimeValue(Seconds(0.001))); // 1000 packets per second
     attackClient.SetAttribute("PacketSize", UintegerValue(1024));
-    attackClient.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1.0]"));
-    attackClient.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0.0]"));
 
     ApplicationContainer attackApps = attackClient.Install(attackers);
     attackApps.Start(Seconds(5.0));
