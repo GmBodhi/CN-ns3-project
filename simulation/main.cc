@@ -24,6 +24,42 @@ static uint32_t g_routerForwardCounter = 0;
 static uint32_t g_forwardedCounterId = 0;
 static uint32_t g_blockedCounterId = 0;
 
+// Packet tracking counters
+static uint32_t g_clientPacketsSent = 0;
+static uint32_t g_serverPacketsRx = 0;
+static Time g_lastClientPacketTime = Seconds(0);
+static Time g_lastServerPacketTime = Seconds(0);
+
+/**
+ * Callback to track packets being transmitted by clients
+ */
+void ClientTxTrace(Ptr<const Packet> packet)
+{
+  g_clientPacketsSent++;
+  g_lastClientPacketTime = Simulator::Now();
+
+  if (g_clientPacketsSent == 1 || g_clientPacketsSent % 100 == 0)
+  {
+    std::cout << "[TRACE] Client packet #" << g_clientPacketsSent
+              << " sent at t=" << Simulator::Now().GetSeconds() << "s" << std::endl;
+  }
+}
+
+/**
+ * Callback to track packets arriving at server device
+ */
+void ServerRxTrace(Ptr<const Packet> packet)
+{
+  g_serverPacketsRx++;
+  g_lastServerPacketTime = Simulator::Now();
+
+  if (g_serverPacketsRx == 1 || g_serverPacketsRx % 100 == 0)
+  {
+    std::cout << "[TRACE] Server device received packet #" << g_serverPacketsRx
+              << " at t=" << Simulator::Now().GetSeconds() << "s" << std::endl;
+  }
+}
+
 /**
  * Callback to update NetAnim when defense state changes
  */
@@ -198,6 +234,27 @@ int main(int argc, char *argv[])
   // Enable packet metadata for visualization
   anim.EnablePacketMetadata(true);
 
+  // Enable IP packet tracing for better NetAnim visualization
+  anim.EnableIpv4RouteTracking("ddos-routes.xml", Seconds(0), Seconds(simulationTime), Seconds(0.25));
+
+  // Enable PCAP tracing on server device to verify packets are arriving
+  p2p.EnablePcap("ddos-server", serverLink.Get(1), true);
+
+  // Connect trace callbacks to track packet flow
+  // Track first legitimate client's transmissions
+  if (legitimateClients.GetN() > 0)
+  {
+    Ptr<NetDevice> clientDev = legitimateClients.Get(0)->GetDevice(0);
+    clientDev->TraceConnectWithoutContext("MacTx", MakeCallback(&ClientTxTrace));
+  }
+
+  // Track server device receptions
+  Ptr<NetDevice> serverDev = serverLink.Get(1);
+  serverDev->TraceConnectWithoutContext("MacRx", MakeCallback(&ServerRxTrace));
+
+  std::cout << "[INFO] PCAP tracing enabled on server device (check ddos-server-*.pcap)" << std::endl;
+  std::cout << "[INFO] Packet flow tracing enabled (client TX and server RX)" << std::endl;
+
   // Position nodes
   anim.SetConstantPosition(server.Get(0), 50, 25);
   anim.SetConstantPosition(router.Get(0), 25, 25);
@@ -226,11 +283,19 @@ int main(int argc, char *argv[])
   Simulator::Run();
 
   // Check how many packets the server actually received/dropped at application level
-  std::cout << "\n[INFO] Packets received at server application: " << serverApp->GetReceived() << std::endl;
+  std::cout << "\n=== Packet Flow Summary ===" << std::endl;
+  std::cout << "Client packets sent (traced from first client): " << g_clientPacketsSent << std::endl;
+  std::cout << "Server device packets received (MAC layer): " << g_serverPacketsRx << std::endl;
+  std::cout << "Server application packets received: " << serverApp->GetReceived() << std::endl;
   if (enableDefense)
   {
-    std::cout << "[INFO] Packets dropped by application-level rate limiter: " << serverApp->GetDropped() << std::endl;
+    std::cout << "Application-level drops (rate limiter): " << serverApp->GetDropped() << std::endl;
+    std::cout << "Defense statistics (all sources):" << std::endl;
+    std::cout << "  - Total allowed by rate limiter: " << (g_rateLimiter ? g_rateLimiter->GetTotalAllowed() : 0) << std::endl;
+    std::cout << "  - Total dropped by rate limiter: " << (g_rateLimiter ? g_rateLimiter->GetTotalDropped() : 0) << std::endl;
   }
+  std::cout << "\nLast client packet at: t=" << g_lastClientPacketTime.GetSeconds() << "s" << std::endl;
+  std::cout << "Last server packet at: t=" << g_lastServerPacketTime.GetSeconds() << "s" << std::endl;
 
   // Enhanced statistics - separate legitimate vs attack traffic
   monitor->CheckForLostPackets();
