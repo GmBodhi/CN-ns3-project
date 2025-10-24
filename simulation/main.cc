@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
   UdpEchoClientHelper legit(serverIP, port);
   legit.SetAttribute("MaxPackets", UintegerValue(50));
   legit.SetAttribute("Interval", TimeValue(Seconds(0.2))); // 5 pps
-  legit.SetAttribute("PacketSize", UintegerValue(512));
+  legit.SetAttribute("PacketSize", UintegerValue(256));
 
   ApplicationContainer legitApps = legit.Install(legitimateClients);
   legitApps.Start(Seconds(2.0));
