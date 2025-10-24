@@ -5,6 +5,7 @@
 #include "ns3/applications-module.h"
 #include "ns3/flow-monitor-module.h"
 #include "ns3/netanim-module.h"
+#include "ns3/ipv4-l3-protocol.h"
 #include "rate-limiter.h"
 
 using namespace ns3;
@@ -34,7 +35,7 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
   if (protocol != 0x0800)
   {
     // Pass non-IP packets (ARP, etc.) to IPv4 layer
-    Ptr<Ipv4> ipv4 = g_serverNode->GetObject<Ipv4>();
+    Ptr<Ipv4L3Protocol> ipv4 = g_serverNode->GetObject<Ipv4L3Protocol>();
     ipv4->Receive(device, packet, protocol, from, device, NetDevice::PACKET_HOST, Address());
     return true;
   }
@@ -42,7 +43,7 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
   // If no defense, pass all packets through
   if (g_rateLimiter == nullptr)
   {
-    Ptr<Ipv4> ipv4 = g_serverNode->GetObject<Ipv4>();
+    Ptr<Ipv4L3Protocol> ipv4 = g_serverNode->GetObject<Ipv4L3Protocol>();
     ipv4->Receive(device, packet, protocol, from, device, NetDevice::PACKET_HOST, Address());
     return true;
   }
@@ -65,13 +66,14 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
   if (allowed)
   {
     allowedCount++;
-    // Manually deliver packet to IPv4 layer
-    Ptr<Ipv4> ipv4 = g_serverNode->GetObject<Ipv4>();
+    // Manually deliver packet to IPv4 layer using Ipv4L3Protocol
+    Ptr<Ipv4L3Protocol> ipv4 = g_serverNode->GetObject<Ipv4L3Protocol>();
     ipv4->Receive(device, packet, protocol, from, device, NetDevice::PACKET_HOST, Address());
   }
   else
   {
     droppedCount++;
+    // Packet is dropped - don't deliver to IPv4 layer
   }
 
   // Log first packet and every 100th dropped packet
