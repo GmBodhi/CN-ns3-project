@@ -50,6 +50,13 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
       colorUpdated = true;
     }
 
+    // Update router description with total drops
+    uint32_t totalDrops = g_rateLimiter->GetTotalDropped();
+    uint32_t totalAllowed = g_rateLimiter->GetTotalAllowed();
+    g_anim->UpdateNodeDescription(g_routerNode,
+        "Router (BLOCKING) Dropped:" + std::to_string(totalDrops) +
+        " Allowed:" + std::to_string(totalAllowed));
+
     // Update node descriptions with drop counts
     if (!allowed)
     {
@@ -63,7 +70,7 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
         {
           uint32_t drops = dropCounts[sourceIp];
           g_anim->UpdateNodeDescription(g_attackers.Get(i),
-                                        "Attacker (Dropped: " + std::to_string(drops) + ")");
+                                        "Attacker " + std::to_string(i) + " (Blocked:" + std::to_string(drops) + ")");
           break;
         }
       }
@@ -132,11 +139,12 @@ int main(int argc, char *argv[])
   NetDeviceContainer serverLink = p2p.Install(router.Get(0), server.Get(0));
   devices.Add(serverLink);
 
-  // Attach rate limiting callback to server's device (index 1 = server side)
+  // Attach rate limiting callback to router's device (index 0 = router side)
+  // This way packets are blocked AT THE ROUTER and visible in NetAnim
   if (enableDefense)
   {
-    Ptr<NetDevice> serverDevice = serverLink.Get(1);
-    serverDevice->SetReceiveCallback(MakeCallback(&RxCallback));
+    Ptr<NetDevice> routerDevice = serverLink.Get(0);
+    routerDevice->SetReceiveCallback(MakeCallback(&RxCallback));
   }
 
   // Install Internet stack
