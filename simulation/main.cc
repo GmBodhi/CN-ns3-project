@@ -19,6 +19,8 @@ static NodeContainer g_attackers;
 static NodeContainer g_legitimateClients;
 static uint32_t g_routerDropCounter = 0;
 static uint32_t g_routerForwardCounter = 0;
+static uint32_t g_forwardedCounterId = 0;
+static uint32_t g_blockedCounterId = 0;
 
 /**
  * Packet receive callback for rate limiting at router
@@ -62,12 +64,12 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
     if (allowed)
     {
       g_routerForwardCounter++;
-      g_anim->UpdateNodeCounter(g_routerNode, 0, g_routerForwardCounter);
+      g_anim->UpdateNodeCounter(g_forwardedCounterId, g_routerNode->GetId(), g_routerForwardCounter);
     }
     else
     {
       g_routerDropCounter++;
-      g_anim->UpdateNodeCounter(g_routerNode, 1, g_routerDropCounter);
+      g_anim->UpdateNodeCounter(g_blockedCounterId, g_routerNode->GetId(), g_routerDropCounter);
 
       // Update attacker node descriptions with drop counts
       auto dropCounts = g_rateLimiter->GetSourceDropCounts();
@@ -224,11 +226,11 @@ int main(int argc, char *argv[])
   anim.UpdateNodeColor(server.Get(0), 255, 165, 0); // Orange for server
   anim.UpdateNodeDescription(server.Get(0), "Target Server");
 
-  // Set up packet counters on router (counter 0 = forwarded, counter 1 = dropped)
+  // Set up packet counters on router
   if (enableDefense)
   {
-    anim.AddNodeCounter(0, "Forwarded");
-    anim.AddNodeCounter(1, "Blocked");
+    g_forwardedCounterId = anim.AddNodeCounter("Forwarded", AnimationInterface::DOUBLE_COUNTER);
+    g_blockedCounterId = anim.AddNodeCounter("Blocked", AnimationInterface::DOUBLE_COUNTER);
   }
 
   // Enable packet metadata for visualization
