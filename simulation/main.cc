@@ -17,9 +17,11 @@ static AnimationInterface* g_anim = nullptr;
 static Ptr<Node> g_routerNode = nullptr;
 static NodeContainer g_attackers;
 static NodeContainer g_legitimateClients;
+static uint32_t g_routerDropCounter = 0;
+static uint32_t g_routerForwardCounter = 0;
 
 /**
- * Packet receive callback for rate limiting
+ * Packet receive callback for rate limiting at router
  */
 bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
                 uint16_t protocol, const Address& from)
@@ -27,6 +29,12 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
   if (g_rateLimiter == nullptr)
   {
     return true; // No defense, allow all packets
+  }
+
+  // Only filter IPv4 packets (0x0800)
+  if (protocol != 0x0800)
+  {
+    return true; // Allow non-IP packets (ARP, etc.)
   }
 
   // Extract source IP from packet
@@ -38,7 +46,7 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
   // Check with rate limiter
   bool allowed = g_rateLimiter->AllowPacket(sourceIp, Simulator::Now());
 
-  // Update NetAnim visualization if defense just activated
+  // Update NetAnim visualization
   if (g_anim != nullptr && g_rateLimiter->IsDefenseActive())
   {
     static bool colorUpdated = false;
@@ -50,12 +58,19 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
       colorUpdated = true;
     }
 
-    // Update node descriptions with drop counts
-    if (!allowed)
+    // Update counters for visualization
+    if (allowed)
     {
-      auto dropCounts = g_rateLimiter->GetSourceDropCounts();
+      g_routerForwardCounter++;
+      g_anim->UpdateNodeCounter(g_routerNode, 0, g_routerForwardCounter);
+    }
+    else
+    {
+      g_routerDropCounter++;
+      g_anim->UpdateNodeCounter(g_routerNode, 1, g_routerDropCounter);
 
-      // Find which node this IP belongs to and update its description
+      // Update attacker node descriptions with drop counts
+      auto dropCounts = g_rateLimiter->GetSourceDropCounts();
       for (uint32_t i = 0; i < g_attackers.GetN(); ++i)
       {
         Ptr<Ipv4> ipv4 = g_attackers.Get(i)->GetObject<Ipv4>();
@@ -63,7 +78,7 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
         {
           uint32_t drops = dropCounts[sourceIp];
           g_anim->UpdateNodeDescription(g_attackers.Get(i),
-                                        "Attacker (Dropped: " + std::to_string(drops) + ")");
+                                        "Attacker " + std::to_string(i) + " (Blocked: " + std::to_string(drops) + ")");
           break;
         }
       }
@@ -132,11 +147,12 @@ int main(int argc, char *argv[])
   NetDeviceContainer serverLink = p2p.Install(router.Get(0), server.Get(0));
   devices.Add(serverLink);
 
-  // Attach rate limiting callback to server's device (index 1 = server side)
+  // Attach rate limiting callback to router's device facing server (index 0 = router side)
+  // This way packets are visibly blocked AT the router in NetAnim
   if (enableDefense)
   {
-    Ptr<NetDevice> serverDevice = serverLink.Get(1);
-    serverDevice->SetReceiveCallback(MakeCallback(&RxCallback));
+    Ptr<NetDevice> routerDevice = serverLink.Get(0);
+    routerDevice->SetReceiveCallback(MakeCallback(&RxCallback));
   }
 
   // Install Internet stack
@@ -154,31 +170,36 @@ int main(int argc, char *argv[])
   uint16_t port = 9;
   Ipv4Address serverIP = server.Get(0)->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
 
-  // Server
-  UdpEchoServerHelper echoServer(port);
-  ApplicationContainer serverApps = echoServer.Install(server);
+  // Server - use PacketSink instead of UdpEchoServer to avoid response traffic
+  PacketSinkHelper sinkServer("ns3::UdpSocketFactory",
+                              InetSocketAddress(Ipv4Address::GetAny(), port));
+  ApplicationContainer serverApps = sinkServer.Install(server);
   serverApps.Start(Seconds(1.0));
   serverApps.Stop(Seconds(simulationTime));
 
-  // Legitimate clients (low rate)
-  UdpEchoClientHelper legit(serverIP, port);
-  legit.SetAttribute("MaxPackets", UintegerValue(50));
-  legit.SetAttribute("Interval", TimeValue(Seconds(0.2))); // 5 pps
-  legit.SetAttribute("PacketSize", UintegerValue(256));
+  // Legitimate clients (low rate) - use OnOffApplication for one-way traffic
+  OnOffHelper legitClient("ns3::UdpSocketFactory",
+                          InetSocketAddress(serverIP, port));
+  legitClient.SetAttribute("DataRate", StringValue("10Kbps")); // ~5 pps * 256 bytes
+  legitClient.SetAttribute("PacketSize", UintegerValue(256));
+  legitClient.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1.0]"));
+  legitClient.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0.0]"));
 
-  ApplicationContainer legitApps = legit.Install(legitimateClients);
+  ApplicationContainer legitApps = legitClient.Install(legitimateClients);
   legitApps.Start(Seconds(2.0));
   legitApps.Stop(Seconds(simulationTime));
 
-  // Attack traffic (high rate)
+  // Attack traffic (high rate) - use OnOffApplication for one-way flood
   if (enableAttack)
   {
-    UdpEchoClientHelper attack(serverIP, port);
-    attack.SetAttribute("MaxPackets", UintegerValue(1000));
-    attack.SetAttribute("Interval", TimeValue(Seconds(0.001))); // 1000 pps
-    attack.SetAttribute("PacketSize", UintegerValue(1024));
+    OnOffHelper attackClient("ns3::UdpSocketFactory",
+                             InetSocketAddress(serverIP, port));
+    attackClient.SetAttribute("DataRate", StringValue("8Mbps")); // ~1000 pps * 1024 bytes
+    attackClient.SetAttribute("PacketSize", UintegerValue(1024));
+    attackClient.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1.0]"));
+    attackClient.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0.0]"));
 
-    ApplicationContainer attackApps = attack.Install(attackers);
+    ApplicationContainer attackApps = attackClient.Install(attackers);
     attackApps.Start(Seconds(5.0));
     attackApps.Stop(Seconds(15.0));
   }
@@ -202,6 +223,13 @@ int main(int argc, char *argv[])
   anim.UpdateNodeDescription(router.Get(0), "Router (Normal)");
   anim.UpdateNodeColor(server.Get(0), 255, 165, 0); // Orange for server
   anim.UpdateNodeDescription(server.Get(0), "Target Server");
+
+  // Set up packet counters on router (counter 0 = forwarded, counter 1 = dropped)
+  if (enableDefense)
+  {
+    anim.AddNodeCounter(0, "Forwarded");
+    anim.AddNodeCounter(1, "Blocked");
+  }
 
   // Enable packet metadata for visualization
   anim.EnablePacketMetadata(true);

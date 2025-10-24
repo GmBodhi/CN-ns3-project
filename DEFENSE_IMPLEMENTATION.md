@@ -134,9 +134,12 @@ cd /home/ns3/ns-allinone-3.39/netanim-3.108
 
 **What to observe:**
 - Router turns **yellow** when defense activates (~5s)
-- Attacker nodes show "Dropped: XXX" in descriptions
+- **Packet counters on router**: "Forwarded" and "Blocked" counts visible
+- Attacker nodes show "Blocked: XXX" in descriptions
+- Packets visibly **stopped at the router** when blocked (not reaching server)
 - Packet flow rate visibly reduced during attack
 - Legitimate client traffic continues to flow
+- **No spurious traffic** after applications stop (one-way traffic model)
 
 ## Implementation Details
 
@@ -162,9 +165,11 @@ if (windowRate > 500 pps && !defenseActive):
 ### Packet Flow
 
 ```
-Packet arrives at server → RxCallback()
+Client/Attacker sends packet → Arrives at router
     ↓
-Extract source IP
+Packet forwarded to server link
+    ↓
+RxCallback() at router device → Extract source IP
     ↓
 Check if defense active
     ↓ (yes)
@@ -172,8 +177,26 @@ RateLimiter::AllowPacket(sourceIP)
     ↓
 Token bucket check
     ↓
-Allow/Drop → Update NetAnim
+Allow: Forward to server + increment counter
+    ↓
+Drop: Block at router + increment drop counter + update NetAnim
 ```
+
+**Key improvement**: Packets are now blocked **at the router** (not at server), making the defense visible in NetAnim.
+
+### Application Model
+
+**Server**: `PacketSink` (one-way receiver)
+- Accepts UDP packets without sending responses
+- Prevents spurious echo traffic after clients stop
+- More realistic for DDoS scenarios (server just receives flood)
+
+**Clients/Attackers**: `OnOffApplication` (one-way senders)
+- Sends UDP packets at configured data rate
+- No echo protocol overhead
+- Clean NetAnim visualization (unidirectional flow)
+
+**Advantage**: No back-and-forth traffic means NetAnim shows only actual attack/legitimate traffic, not protocol overhead.
 
 ### Statistics Classification
 
