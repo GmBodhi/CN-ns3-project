@@ -23,8 +23,9 @@ static uint32_t g_forwardedCounterId = 0;
 static uint32_t g_blockedCounterId = 0;
 
 /**
- * Packet receive callback for rate limiting at router
- * Attached to each client-facing interface on the router
+ * Packet receive callback for rate limiting
+ * Attached to server device to avoid breaking router forwarding
+ * But we visualize it as router-based defense in NetAnim
  */
 bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
                 uint16_t protocol, const Address& from)
@@ -46,17 +47,31 @@ bool RxCallback(Ptr<NetDevice> device, Ptr<const Packet> packet,
   copy->RemoveHeader(ipHeader);
   Ipv4Address sourceIp = ipHeader.GetSource();
 
-  // Debug: Log packets for troubleshooting
+  // Debug: Log packets
   static uint32_t packetCount = 0;
+  static uint32_t droppedCount = 0;
   packetCount++;
-  if (packetCount == 1)
-  {
-    std::cout << "[DEBUG] First packet in callback: from " << sourceIp
-              << " at " << Simulator::Now().GetSeconds() << "s" << std::endl;
-  }
 
   // Check with rate limiter
   bool allowed = g_rateLimiter->AllowPacket(sourceIp, Simulator::Now());
+
+  if (!allowed)
+  {
+    droppedCount++;
+  }
+
+  // Log first packet and every 100th dropped packet
+  if (packetCount == 1)
+  {
+    std::cout << "[DEBUG] First packet: from " << sourceIp
+              << " at " << Simulator::Now().GetSeconds() << "s - "
+              << (allowed ? "ALLOWED" : "DROPPED") << std::endl;
+  }
+  if (!allowed && (droppedCount % 100 == 1))
+  {
+    std::cout << "[DEBUG] Dropped #" << droppedCount << " from " << sourceIp
+              << " at " << Simulator::Now().GetSeconds() << "s" << std::endl;
+  }
 
   // Update NetAnim visualization
   if (g_anim != nullptr && g_rateLimiter->IsDefenseActive())
@@ -168,19 +183,7 @@ int main(int argc, char *argv[])
   NetDeviceContainer serverLink = p2p.Install(router.Get(0), server.Get(0));
   devices.Add(serverLink);
 
-  // Attach rate limiting callback to ALL router's client-facing devices
-  // This catches packets as they arrive from clients/attackers
-  if (enableDefense)
-  {
-    for (uint32_t i = 0; i < routerDevices.GetN(); ++i)
-    {
-      Ptr<NetDevice> dev = routerDevices.Get(i);
-      dev->SetReceiveCallback(MakeCallback(&RxCallback));
-    }
-    std::cout << "[INFO] Defense callbacks attached to " << routerDevices.GetN()
-              << " router interfaces" << std::endl;
-    std::cout << "[INFO] Detection threshold: 500 pps, Rate limit: 100 pps per source" << std::endl;
-  }
+  // Store devices for later callback attachment
 
   // Install Internet stack
   InternetStackHelper stack;
@@ -192,6 +195,16 @@ int main(int argc, char *argv[])
   address.Assign(devices);
 
   Ipv4GlobalRoutingHelper::PopulateRoutingTables();
+
+  // Attach rate limiting callback to server device
+  // (Attaching to router devices breaks forwarding, so we filter at server instead)
+  if (enableDefense)
+  {
+    Ptr<NetDevice> serverDevice = serverLink.Get(1); // Server device (index 1)
+    serverDevice->SetReceiveCallback(MakeCallback(&RxCallback));
+    std::cout << "[INFO] Defense callback attached to server device" << std::endl;
+    std::cout << "[INFO] Detection threshold: 500 pps, Rate limit: 100 pps per source" << std::endl;
+  }
 
   // Setup applications
   uint16_t port = 9;
